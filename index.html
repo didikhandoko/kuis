@@ -255,6 +255,16 @@ body {
 .s-wach   { background:#128C7E; color:#fff; }
 .s-soc    { background:linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888); color:#fff; }
 
+/* Canvas preview */
+.canvas-preview-wrap { margin-top:16px; }
+.canvas-hint {
+  display:flex; align-items:flex-start; gap:10px;
+  background:rgba(212,168,67,0.15); border:1.5px solid rgba(212,168,67,0.4);
+  border-radius:12px; padding:12px 14px; margin-bottom:12px;
+  color:#f0c96a; font-size:0.82rem; line-height:1.5;
+}
+.canvas-hint-icon { font-size:1.4rem; flex-shrink:0; }
+
 /* ─── BOTTOM NAV ─── */
 .bottom-nav {
   position:fixed; bottom:0; left:0; right:0;
@@ -433,11 +443,20 @@ body {
       <div class="ac-stripe" style="margin-top:16px;"></div>
     </div>
 
+    <!-- Canvas Pratinjau Kartu (untuk simpan di HP) -->
+    <div class="canvas-preview-wrap" id="canvas-preview-wrap" style="display:none;">
+      <div class="canvas-hint">
+        <span class="canvas-hint-icon">👆</span>
+        <span><strong>Tekan lama gambar di bawah → Simpan Foto</strong><br>untuk menyimpan ke galeri HP kamu</span>
+      </div>
+      <canvas id="card-canvas" style="width:100%;border-radius:16px;display:block;box-shadow:0 0 40px rgba(212,168,67,0.4);"></canvas>
+    </div>
+
     <!-- Tombol Share -->
     <div class="share-section">
       <h3>📤 Bagikan Kartu Penghargaan</h3>
       <div class="share-grid">
-        <button class="share-btn s-save" onclick="saveCard()"><span class="si">💾</span>Simpan Gambar</button>
+        <button class="share-btn s-save" onclick="saveCard()"><span class="si">🖼️</span>Buat Gambar</button>
         <button class="share-btn s-wast" onclick="shareWAStory()"><span class="si">📲</span>WA Story</button>
         <button class="share-btn s-wach" onclick="shareWAChat()"><span class="si">💬</span>WA Chat</button>
         <button class="share-btn s-soc"  onclick="shareSocial()"><span class="si">📱</span>Media Sosial</button>
@@ -832,29 +851,254 @@ function makeCard() {
     ? `<img src="${capturedPhoto}" alt="Selfie pemenang" />`
     : `<div class="ac-photo-placeholder">🤳</div>`;
 
+  // Reset canvas sebelum buka modal (agar tidak tampilkan kartu lama)
+  document.getElementById('canvas-preview-wrap').style.display = 'none';
   document.getElementById('modal-award').classList.add('open');
 }
 
-function closeModal() { document.getElementById('modal-award').classList.remove('open'); }
-
-/* ─── Share helpers ─── */
-async function saveCard() {
-  if (!window.html2canvas) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
-  try {
-    const canvas = await html2canvas(document.getElementById('award-card'), { scale:2, useCORS:true });
-    const a = document.createElement('a');
-    a.href     = canvas.toDataURL('image/png');
-    a.download = 'kartu-panglima-bhumi-handayani.png';
-    a.click();
-  } catch { alert('Tidak bisa menyimpan. Coba screenshot layar ini.'); }
+function closeModal() {
+  document.getElementById('modal-award').classList.remove('open');
+  // Reset canvas preview saat modal ditutup
+  document.getElementById('canvas-preview-wrap').style.display = 'none';
+  const cvs = document.getElementById('card-canvas');
+  const ctx = cvs.getContext('2d');
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
 }
 
-function loadScript(src) {
-  return new Promise((res, rej) => {
-    const s = document.createElement('script');
-    s.src = src; s.onload = res; s.onerror = rej;
-    document.head.appendChild(s);
-  });
+/* ─── Share helpers ─── */
+/* ═══════════════════════════════════════════════════════════
+   GAMBAR KARTU KE CANVAS (100% mobile-friendly)
+   Tidak pakai html2canvas — digambar langsung via Canvas API
+   User tinggal tekan lama canvas → Simpan Foto di galeri
+═══════════════════════════════════════════════════════════ */
+function saveCard() {
+  const winner   = document.getElementById('ac-winner').textContent.trim();
+  const opponent = document.getElementById('ac-loser').textContent.trim();
+  const dateStr  = document.getElementById('ac-date').textContent.trim();
+  const photoWrap = document.getElementById('ac-photo-wrap');
+  const photoImg  = photoWrap.querySelector('img');
+
+  // Ukuran kartu portrait 2× untuk retina
+  const W = 640, H = 920;
+  const cvs = document.getElementById('card-canvas');
+  cvs.width  = W;
+  cvs.height = H;
+  const ctx  = cvs.getContext('2d');
+
+  // ── Background gradient ──────────────────────────────────
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0,    '#0d2b1a');
+  bg.addColorStop(0.5,  '#1a4a2e');
+  bg.addColorStop(1,    '#2d5a38');
+  ctx.fillStyle = bg;
+  roundRect(ctx, 0, 0, W, H, 32);
+  ctx.fill();
+
+  // ── Border emas ──────────────────────────────────────────
+  ctx.strokeStyle = '#d4a843';
+  ctx.lineWidth   = 6;
+  roundRect(ctx, 3, 3, W-6, H-6, 30);
+  ctx.stroke();
+
+  // ── Stripe atas ──────────────────────────────────────────
+  const stripe = ctx.createLinearGradient(0, 0, W, 0);
+  stripe.addColorStop(0,   '#d4a843');
+  stripe.addColorStop(0.5, '#f0c96a');
+  stripe.addColorStop(1,   '#d4a843');
+  ctx.fillStyle = stripe;
+  roundRectTop(ctx, 3, 3, W-6, 12, 30);
+  ctx.fill();
+
+  // ── Ikon daun ────────────────────────────────────────────
+  ctx.font      = '52px serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('\uD83C\uDF3F', W/2, 108);
+
+  // ── Judul utama ──────────────────────────────────────────
+  ctx.fillStyle = '#d4a843';
+  ctx.font      = 'bold 26px Georgia, serif';
+  ctx.textAlign = 'center';
+  wrapText(ctx, 'Panglima Pelestari Lingkungan', W/2, 160, W-80, 34);
+  wrapText(ctx, 'Bhumi Handayani', W/2, 196, W-80, 34);
+
+  // ── Sub judul ────────────────────────────────────────────
+  ctx.fillStyle = '#8dc9a0';
+  ctx.font      = '18px sans-serif';
+  ctx.fillText('Penghargaan Kuis Lingkungan Hidup', W/2, 236);
+
+  // ── Divider emas ─────────────────────────────────────────
+  const divGrad = ctx.createLinearGradient(60, 0, W-60, 0);
+  divGrad.addColorStop(0,   'transparent');
+  divGrad.addColorStop(0.5, '#d4a843');
+  divGrad.addColorStop(1,   'transparent');
+  ctx.strokeStyle = divGrad;
+  ctx.lineWidth   = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(60, 256); ctx.lineTo(W-60, 256);
+  ctx.stroke();
+
+  // ── Foto selfie (lingkaran) ──────────────────────────────
+  const cx = W/2, cy = 360, r = 90;
+  // Lingkaran border emas
+  ctx.beginPath();
+  ctx.arc(cx, cy, r+6, 0, Math.PI*2);
+  ctx.fillStyle = '#d4a843';
+  ctx.fill();
+
+  if (photoImg && photoImg.src) {
+    // Gambar foto dalam lingkaran clip
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.clip();
+    try {
+      ctx.drawImage(photoImg, cx-r, cy-r, r*2, r*2);
+    } catch(e) {
+      drawPhotoPlaceholder(ctx, cx, cy, r);
+    }
+    ctx.restore();
+  } else {
+    // Placeholder jika tidak ada foto
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fill();
+    ctx.restore();
+    drawPhotoPlaceholder(ctx, cx, cy, r);
+  }
+
+  // ── Label "diberikan kepada" ─────────────────────────────
+  ctx.fillStyle = '#8dc9a0';
+  ctx.font      = '17px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Penghargaan Ini Diberikan Kepada', W/2, 490);
+
+  // ── Nama Pemenang ────────────────────────────────────────
+  ctx.fillStyle = '#ffffff';
+  ctx.font      = 'bold 36px Georgia, serif';
+  ctx.textAlign = 'center';
+  wrapText(ctx, winner, W/2, 535, W-60, 42);
+
+  // ── VS ───────────────────────────────────────────────────
+  ctx.fillStyle = '#f0c96a';
+  ctx.font      = '17px sans-serif';
+  ctx.fillText('\uD83C\uDD9A Mengalahkan', W/2, 590);
+
+  // ── Nama Lawan ───────────────────────────────────────────
+  ctx.fillStyle = '#cde8d4';
+  ctx.font      = 'bold 26px sans-serif';
+  ctx.textAlign = 'center';
+  wrapText(ctx, opponent, W/2, 628, W-60, 32);
+
+  // ── Badge emas ───────────────────────────────────────────
+  const badgeGrad = ctx.createLinearGradient(60, 660, W-60, 720);
+  badgeGrad.addColorStop(0, '#d4a843');
+  badgeGrad.addColorStop(1, '#b8882a');
+  ctx.fillStyle = badgeGrad;
+  roundRect(ctx, 60, 660, W-120, 100, 16);
+  ctx.fill();
+
+  ctx.fillStyle = '#1a4a2e';
+  ctx.font      = 'bold 22px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('\uD83C\uDFC6 Panglima Pelestari Lingkungan', W/2, 700);
+  ctx.font      = '15px sans-serif';
+  ctx.fillText('Bhumi Handayani \u2013 Kuis Lingkungan Hidup', W/2, 726);
+
+  // ── Tanggal ──────────────────────────────────────────────
+  ctx.fillStyle = 'rgba(141,201,160,0.5)';
+  ctx.font      = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(dateStr, W/2, 792);
+
+  // ── Stripe bawah ─────────────────────────────────────────
+  ctx.fillStyle = stripe;
+  roundRectBottom(ctx, 3, H-15, W-6, 12, 30);
+  ctx.fill();
+
+  // ── Tampilkan canvas preview ─────────────────────────────
+  const wrap = document.getElementById('canvas-preview-wrap');
+  wrap.style.display = 'block';
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  // ── Coba Web Share API dengan file (Android Chrome) ──────
+  cvs.toBlob(blob => {
+    const file = new File([blob], 'kartu-panglima-bhumi-handayani.png', { type:'image/png' });
+    if (navigator.canShare && navigator.canShare({ files:[file] })) {
+      navigator.share({
+        title: 'Kartu Panglima Pelestari Lingkungan',
+        files : [file]
+      }).catch(() => {}); // user cancel = no-op
+    }
+    // iOS Safari: tampilkan canvas, user tekan lama untuk simpan
+  }, 'image/png');
+}
+
+/* ── Helper: Gambar placeholder foto ──── */
+function drawPhotoPlaceholder(ctx, cx, cy, r) {
+  ctx.font      = (r * 0.9) + 'px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillText('\uD83E\uDD33', cx, cy);
+  ctx.textBaseline = 'alphabetic';
+}
+
+/* ── Helper: Wrap text panjang ──── */
+function wrapText(ctx, text, x, y, maxW, lineH) {
+  const words = text.split(' ');
+  let line = '';
+  for (let i = 0; i < words.length; i++) {
+    const test = line + words[i] + ' ';
+    if (ctx.measureText(test).width > maxW && i > 0) {
+      ctx.fillText(line.trim(), x, y);
+      line = words[i] + ' ';
+      y += lineH;
+    } else { line = test; }
+  }
+  ctx.fillText(line.trim(), x, y);
+}
+
+/* ── Helper: Rounded rect (semua sudut) ── */
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.arcTo(x+w, y,   x+w, y+r,   r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h);
+  ctx.arcTo(x,   y+h, x,   y+h-r, r);
+  ctx.lineTo(x,   y+r);
+  ctx.arcTo(x,   y,   x+r, y,     r);
+  ctx.closePath();
+}
+
+/* ── Helper: Rounded rect hanya sudut atas ── */
+function roundRectTop(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.arcTo(x+w, y, x+w, y+r, r);
+  ctx.lineTo(x+w, y+h);
+  ctx.lineTo(x,   y+h);
+  ctx.lineTo(x,   y+r);
+  ctx.arcTo(x, y, x+r, y, r);
+  ctx.closePath();
+}
+
+/* ── Helper: Rounded rect hanya sudut bawah ── */
+function roundRectBottom(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x+w, y);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h);
+  ctx.arcTo(x, y+h, x, y+h-r, r);
+  ctx.lineTo(x, y);
+  ctx.closePath();
 }
 
 function shareWAStory() {
